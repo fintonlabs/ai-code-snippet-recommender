@@ -1,79 +1,60 @@
 import os
-import json
-import nltk
+import re
+from typing import List, Tuple
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from typing import List, Dict, Tuple
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+import nltk
 
-class CodeSnippetRecommender:
+nltk.download('punkt')
+nltk.download('stopwords')
+
+class CodeSearchTool:
     """
-    A tool that recommends relevant code snippets based on natural language queries.
+    A tool for searching a local repository of code snippets based on natural language queries.
     """
-
-    def __init__(self, snippets_dir: str, metadata_file: str):
+    def __init__(self, repo_path: str):
         """
-        Initialize the recommender with the directory containing the code snippets and the metadata file.
-
-        :param snippets_dir: The directory containing the code snippets.
-        :param metadata_file: The file containing the metadata for the code snippets.
+        Initialize the tool with the path to the code repository.
         """
-        self.snippets_dir = snippets_dir
-        self.metadata_file = metadata_file
-        self.snippets_metadata = self.load_metadata()
-        self.vectorizer = TfidfVectorizer()
+        self.repo_path = repo_path
+        self.vectorizer = TfidfVectorizer(stop_words=stopwords.words('english'))
 
-    def load_metadata(self) -> Dict[str, Dict[str, str]]:
+    def _load_snippets(self, language: str) -> List[str]:
         """
-        Load the metadata for the code snippets from the metadata file.
-
-        :return: A dictionary mapping from code snippet file names to their metadata.
+        Load all code snippets in the specified programming language.
         """
-        with open(self.metadata_file, 'r') as f:
-            return json.load(f)
+        snippets = []
+        for filename in os.listdir(self.repo_path):
+            if filename.endswith('.' + language):
+                with open(os.path.join(self.repo_path, filename), 'r') as file:
+                    snippets.append(file.read())
+        return snippets
 
-    def process_query(self, query: str) -> List[str]:
+    def _preprocess_query(self, query: str) -> str:
         """
-        Process a natural language query into a list of key words.
-
-        :param query: The natural language query.
-        :return: A list of key words extracted from the query.
+        Preprocess the query by removing punctuation and converting to lowercase.
         """
-        return nltk.word_tokenize(query)
+        query = re.sub(r'\W', ' ', query)
+        query = query.lower()
+        return query
 
-    def search_repository(self, key_words: List[str]) -> Dict[str, float]:
+    def search(self, query: str, language: str) -> List[Tuple[str, float]]:
         """
-        Search the repository of code snippets based on the processed query.
-
-        :param key_words: The key words to search for.
-        :return: A dictionary mapping from code snippet file names to their relevance scores.
+        Search the code repository based on the query and programming language.
         """
-        descriptions = [metadata['description'] for metadata in self.snippets_metadata.values()]
-        tfidf_matrix = self.vectorizer.fit_transform(descriptions)
-        query_vector = self.vectorizer.transform([' '.join(key_words)])
-        cosine_similarities = cosine_similarity(query_vector, tfidf_matrix).flatten()
-        return dict(zip(self.snippets_metadata.keys(), cosine_similarities))
+        query = self._preprocess_query(query)
+        snippets = self._load_snippets(language)
 
-    def rank_snippets(self, relevance_scores: Dict[str, float]) -> List[Tuple[str, Dict[str, str], float]]:
-        """
-        Rank the code snippets based on their relevance scores.
+        tfidf_matrix = self.vectorizer.fit_transform([query] + snippets)
+        cosine_similarities = (tfidf_matrix * tfidf_matrix.T).A[0]
 
-        :param relevance_scores: The relevance scores for the code snippets.
-        :return: A list of tuples, each containing a code snippet file name, its metadata, and its relevance score, sorted by relevance score in descending order.
-        """
-        ranked_snippets = sorted(relevance_scores.items(), key=lambda x: x[1], reverse=True)
-        return [(file_name, self.snippets_metadata[file_name], score) for file_name, score in ranked_snippets]
+        ranked_snippets = sorted(zip(snippets, cosine_similarities[1:]), key=lambda x: -x[1])
+        return ranked_snippets
 
-    def recommend_snippets(self, query: str) -> List[Tuple[str, Dict[str, str], float]]:
-        """
-        Recommend code snippets based on a natural language query.
 
-        :param query: The natural language query.
-        :return: A list of recommended code snippets, each represented by a tuple containing the file name, the metadata, and the relevance score.
-        """
-        key_words = self.process_query(query)
-        relevance_scores = self.search_repository(key_words)
-        return self.rank_snippets(relevance_scores)
-
-# Example usage:
-recommender = CodeSnippetRecommender('snippets_dir', 'metadata.json')
-print(recommender.recommend_snippets('How do I write a function in Python to sort a list?'))
+if __name__ == "__main__":
+    tool = CodeSearchTool('path_to_your_code_repository')
+    results = tool.search('How to open a file in Python?', 'py')
+    for snippet, score in results:
+        print(f'Score: {score}\nSnippet:\n{snippet}\n')

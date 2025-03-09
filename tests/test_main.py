@@ -1,21 +1,16 @@
 import unittest
-from codesnippetrecommender import CodeSnippetRecommender
+from codesearchtool import CodeSearchTool
 
-class TestCodeSnippetRecommender(unittest.TestCase):
-
+class TestCodeSearchTool(unittest.TestCase):
     def setUp(self):
-        self.recommender = CodeSnippetRecommender('snippets_dir', 'metadata.json')
+        self.tool = CodeSearchTool('path_to_test_code_repository')
 
-    def test_process_query(self):
-        query = 'How do I write a function in Python to sort a list?'
-        expected_result = ['How', 'do', 'I', 'write', 'a', 'function', 'in', 'Python', 'to', 'sort', 'a', 'list', '?']
-        self.assertEqual(self.recommender.process_query(query), expected_result)
-
-    def test_recommend_snippets(self):
-        query = 'How do I write a function in Python to sort a list?'
-        result = self.recommender.recommend_snippets(query)
-        self.assertIsInstance(result, list)
-        self.assertGreater(len(result), 0)
+    def test_search(self):
+        query = 'How to open a file in Python?'
+        language = 'py'
+        results = self.tool.search(query, language)
+        self.assertIsInstance(results, list)
+        self.assertGreater(len(results), 0)
 
 if __name__ == '__main__':
     unittest.main()

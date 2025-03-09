@@ -1,60 +1,69 @@
 import os
-import re
-from typing import List, Tuple
-from sklearn.feature_extraction.text import TfidfVectorizer
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
 import nltk
-
-nltk.download('punkt')
-nltk.download('stopwords')
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import requests
 
 class CodeSearchTool:
     """
     A tool for searching a local repository of code snippets based on natural language queries.
     """
-    def __init__(self, repo_path: str):
-        """
-        Initialize the tool with the path to the code repository.
-        """
-        self.repo_path = repo_path
-        self.vectorizer = TfidfVectorizer(stop_words=stopwords.words('english'))
 
-    def _load_snippets(self, language: str) -> List[str]:
+    def __init__(self, repository_path: str):
         """
-        Load all code snippets in the specified programming language.
+        Initialize the tool with the path to the local repository of code snippets.
+
+        :param repository_path: The path to the local repository of code snippets.
         """
-        snippets = []
-        for filename in os.listdir(self.repo_path):
-            if filename.endswith('.' + language):
-                with open(os.path.join(self.repo_path, filename), 'r') as file:
-                    snippets.append(file.read())
-        return snippets
+        self.repository_path = repository_path
+        self.vectorizer = TfidfVectorizer(stop_words='english')
+        self.code_snippets = self.load_code_snippets()
 
-    def _preprocess_query(self, query: str) -> str:
+    def load_code_snippets(self) -> dict:
         """
-        Preprocess the query by removing punctuation and converting to lowercase.
+        Load code snippets from the local repository.
+
+        :return: A dictionary where keys are file names and values are code snippets.
         """
-        query = re.sub(r'\W', ' ', query)
-        query = query.lower()
-        return query
+        code_snippets = {}
+        for file_name in os.listdir(self.repository_path):
+            with open(os.path.join(self.repository_path, file_name), 'r') as file:
+                code_snippets[file_name] = file.read()
+        return code_snippets
 
-    def search(self, query: str, language: str) -> List[Tuple[str, float]]:
+    def process_query(self, query: str) -> str:
         """
-        Search the code repository based on the query and programming language.
+        Process a natural language query using NLP techniques.
+
+        :param query: A natural language query.
+        :return: A processed query.
         """
-        query = self._preprocess_query(query)
-        snippets = self._load_snippets(language)
+        return nltk.word_tokenize(query)
 
-        tfidf_matrix = self.vectorizer.fit_transform([query] + snippets)
-        cosine_similarities = (tfidf_matrix * tfidf_matrix.T).A[0]
+    def search(self, query: str) -> dict:
+        """
+        Search the local repository of code snippets based on a processed query.
 
-        ranked_snippets = sorted(zip(snippets, cosine_similarities[1:]), key=lambda x: -x[1])
-        return ranked_snippets
+        :param query: A processed query.
+        :return: A dictionary where keys are file names and values are relevance scores.
+        """
+        tfidf_matrix = self.vectorizer.fit_transform(list(self.code_snippets.values()) + [query])
+        cosine_similarities = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1])[0]
+        return {file_name: similarity for file_name, similarity in zip(self.code_snippets.keys(), cosine_similarities)}
 
+    def recommend(self, query: str) -> dict:
+        """
+        Recommend relevant code snippets based on a processed query.
 
-if __name__ == "__main__":
-    tool = CodeSearchTool('path_to_your_code_repository')
-    results = tool.search('How to open a file in Python?', 'py')
-    for snippet, score in results:
-        print(f'Score: {score}\nSnippet:\n{snippet}\n')
+        :param query: A processed query.
+        :return: A dictionary where keys are file names and values are relevance scores.
+        """
+        processed_query = self.process_query(query)
+        search_results = self.search(processed_query)
+        return {k: v for k, v in sorted(search_results.items(), key=lambda item: item[1], reverse=True)}
+
+# Example usage:
+tool = CodeSearchTool('/path/to/repository')
+recommendations = tool.recommend('How do I write a for loop in Python?')
+for file_name, relevance_score in recommendations.items():
+    print(f'{file_name}: {relevance_score}')
